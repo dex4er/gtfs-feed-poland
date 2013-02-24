@@ -49,6 +49,9 @@ Format GTFS wymaga, aby każdy przystanek w bazie miał podaną lokalizację geo
 
 Dla przykładu: nie ma spisu kierunków (kursów) na tej samej trasie. Tę informację trzeba wyciągać z różnych dokumentów HTML.
 
+### Kursy widmo
+
+Nie wszystkie kursy rozpoczynają się na pierwszym lub kończą na ostatnim przystanku. Przykład: dla linii 1 niektóre przystanki mają po 89 kursów a niektóre po 90.
 
 Uproszczenia
 ------------
@@ -63,4 +66,4 @@ Pierwsza działająca wersja ma być uproszczona w stosunku do pełnej i sukcesy
 TODO
 ----
 
- [ ] Uspójnienie ID pozycji z bazy GTFS z danymi ze strony MPK
+  [ ] Uspójnienie ID pozycji z bazy GTFS z danymi ze strony MPK
