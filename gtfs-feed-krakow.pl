@@ -1,20 +1,35 @@
 #!/usr/bin/env perl
 
+# (c) 2013 Piotr Roszatycki <piotr.roszatycki@gmail.com>
+#
+# GPLv2
+
 use 5.14.0;
-use Modern::Perl;
+
+use strict;
+use warnings;
+
+use Smart::Comments;
+use if $ENV{VERBOSE}, 'Carp::Always';
 
 use JSON 'to_json';
-use Smart::Comments;
 
 use Mojo::DOM;
 use Mojo::UserAgent;
 use Mojo::URL;
+use Mojo::Util qw(trim);
 
-use Encode 'decode', 'encode';
+use Encode qw(decode encode);
+use Text::Unidecode;
 
 
-my $url_routes_index = Mojo::URL->new('http://rozklady.mpk.krakow.pl/linie.aspx');
-my $url_stops_index  = Mojo::URL->new('http://rozklady.mpk.krakow.pl/aktualne/przystan.htm');
+sub url {
+    return Mojo::URL->new(shift);
+};
+
+
+my $url_routes_index = url 'http://localhost:5000/rozklady.mpk.krakow.pl/linie.aspx';
+my $url_stops_index  = url 'http://localhost:5000/rozklady.mpk.krakow.pl/aktualne/przystan.htm';
 
 my @routes;
 
@@ -26,23 +41,23 @@ use constant {
 
 
 sub normalize {
-    my $s = encode 'utf-8', decode 'iso-8859-2', shift;
+    my ($s) = @_;
+    # TODO: $s = decode 'iso-8859-2', $s;
+    $s = encode 'utf-8', $s;
+    $s = trim $s;
     $s =~ s/\s\s+/ /g;
-    $s =~ s/^\s+//;
-    $s =~ s/\s$//;
     return $s;
 }
 
-my $gtfs_fields = {
-    agency     => [ qw( agency_id agency_name agency_url agency_timezone agency_phone agency_lang ) ],
-    calendar   => [ qw( service_id monday tuesday wednesday thursday friday saturday sunday start_date end_date ) ],
-    stops      => [ qw( stop_id stop_name stop_desc stop_lat stop_lon zone_id stop_url ) ],
-    routes     => [ qw( route_id agency_id route_short_name route_long_name route_desc route_type route_url route_color route_text_color ) ],
-    trips      => [ qw( route_id service_id trip_id trip_headsign direction_id block_id shape_id ) ],
-    stop_times => [ qw( trip_id arrival_time departure_time stop_id stop_sequence stop_headsign pickup_type drop_off_time shape_dist_traveled ) ],
-};
+sub id {
+    my ($s) = @_;
+    $s = unidecode $s;
+    $s =~ s/\W+/_/;
+    $s =~ tr/a-z/A-Z/;
+    return $s;
+}
 
-my $gtfs_data = {
+my $data = {
     agency => [
         {
             agency_id => 'MPK',
@@ -52,7 +67,7 @@ my $gtfs_data = {
             agency_lang => 'pl',
         },
     ],
-    # TODO: pobieranie kalendarza
+    # TODO: pobieranie kalendarza dla każdej linii z osobna
     calendar => [
         {
             service_id => 'P', 
@@ -72,30 +87,20 @@ my $gtfs_data = {
 };
 
 
-# Tymczasowy hack:
-# Baza przystanki.txt oraz przystankiwsp.txt z Transportoida
-my %stop_name2geo;
+my %stops_geo;
+
+# Baza geo/krakow.txt z pozycjami przystanów
 {
-    my %stop_id2name;
-    {
-        open my $fh, 'przystanki.txt';
-        while (my $line = <$fh>) {
-            # 0 Trojadyn Skrzyżowanie
-            $line =~ /^(\d+) (.*)$/ or next;
-            $stop_id2name{$1} = $2;
-        };
-    }
-
-    {
-        open my $fh, 'przystankiwsp.txt';
-        while (my $line = <$fh>) {
-            # 0 19868001;50138185;
-            $line =~ /^(\d+) (\d{2})(\d{6});(\d{2})(\d{6});$/ or next;
-            $stop_name2geo{$stop_id2name{$1}} = { lon => "$2.$3", lat => "$4.$5" }
-        };
-    }
+    open my $fh, 'geo/krakow.txt';
+    while (my $line = <$fh>) {
+        # Agatowa,50.022095,20.041707
+        chomp $line;
+        my @f = split /,/, $line;
+        next unless @f == 3;
+        die "Duplicated entry for stop $f[0]" if exists $stops_geo{$f[0]};
+        $stops_geo{$f[0]} = { lat => $f[1], lon => $f[2] };
+    };
 }
-
 
 my $ua = Mojo::UserAgent->new;
 $ua->http_proxy($ENV{http_proxy}) if $ENV{http_proxy};
@@ -104,35 +109,32 @@ $ua->http_proxy($ENV{http_proxy}) if $ENV{http_proxy};
 my %stop_name2id;
 # Przystanki
 {
-    my $tx = $ua->get($url_stops_index);
-    my $dom = $tx->res->dom;
+    my $dom = $ua->get($url_stops_index)->res->dom;
 
     $dom->find('li a')->each(sub {
         my ($node) = @_;
         my $href = $node->{href};
-        my $stop_id = $href =~ s{^p/(.*)\.htm$}{$1}r;
         my $stop_name = normalize $node->text;
+        my $stop_id = id $stop_name;
 
         $stop_name2id{$stop_name} = $stop_id;
 
-        # warn "Missing geo data for stop $stop_name" unless defined $stop_name2geo{$stop_name};
+        die "Missing geo data for stop $stop_name" unless defined $stops_geo{$stop_name};
 
-        return unless $stop_name2geo{$stop_name};
+        return unless $stops_geo{$stop_name};
 
-        push @{$gtfs_data->{stops}}, {
+        push @{$data->{stops}}, {
             stop_id => $stop_id,
             stop_name => $stop_name,
-            stop_lat => $stop_name2geo{$stop_name}{lat},
-            stop_lon => $stop_name2geo{$stop_name}{lon},
+            stop_lat => $stops_geo{$stop_name}{lat},
+            stop_lon => $stops_geo{$stop_name}{lon},
         };
     });
 }
 
-
 # Linie
 {
-    my $tx = $ua->get($url_routes_index);
-    my $dom = $tx->res->dom;
+    my $dom = $ua->get($url_routes_index)->res->dom;
 
     $dom->find('td a')->each(sub {
         my ($node) = @_;
@@ -140,12 +142,14 @@ my %stop_name2id;
         my $route_id = $href =~ s{.*/(.*)/.*}{$1}r;
         my $route_name = normalize $node->text or return;
 
+        return if $route_id > 1; # TODO: na razie tylko jedna linia
+
         push @routes, {
             id  => $route_id,
             url => $url_routes_index->clone->path($href),
         };
 
-        push @{$gtfs_data->{routes}}, {
+        push @{$data->{routes}}, {
             route_id => $route_id,
             agency_id => 'MPK',  # TODO: hardcode
             route_short_name => $route_name,
@@ -211,7 +215,7 @@ my %stop_name2id;
                 my $n2 = 0;
                 foreach my $time (@times) {
                     next unless $stop_name2id{$stop_name};  # TODO: warn
-                    push @{$gtfs_data->{stop_times}}, {
+                    push @{$data->{stop_times}}, {
                         trip_id => $n2,
                         arrival_time => $time,
                         departure_time => $time,
@@ -226,7 +230,7 @@ my %stop_name2id;
             if ($n1 == 0) {
                 my $n2 = 0;
                 foreach my $time (@times) {
-                    push @{$gtfs_data->{trips}}, {
+                    push @{$data->{trips}}, {
                         route_id => $route->{id},
                         service_id => 'P',
                         trip_id => $n2,
@@ -242,18 +246,27 @@ my %stop_name2id;
     }
 }
 
-# say to_json $gtfs_data->{stop_times}, { pretty => 1 };
+# say to_json $data->{stop_times}, { pretty => 1 };
 
 # Dump files
 
+my $fields = {
+    agency     => [ qw( agency_id agency_name agency_url agency_timezone agency_phone agency_lang ) ],
+    calendar   => [ qw( service_id monday tuesday wednesday thursday friday saturday sunday start_date end_date ) ],
+    stops      => [ qw( stop_id stop_name stop_desc stop_lat stop_lon zone_id stop_url ) ],
+    routes     => [ qw( route_id agency_id route_short_name route_long_name route_desc route_type route_url route_color route_text_color ) ],
+    trips      => [ qw( route_id service_id trip_id trip_headsign direction_id block_id shape_id ) ],
+    stop_times => [ qw( trip_id arrival_time departure_time stop_id stop_sequence stop_headsign pickup_type drop_off_time shape_dist_traveled ) ],
+};
+
 -d 'data' or mkdir 'data' or die "$!";
 
-foreach my $name (keys %$gtfs_fields) {
+foreach my $name (keys %$fields) {
     open my $fh, '>', "data/$name.txt";
-    say $fh join ',', @{$gtfs_fields->{$name}};
-    foreach my $row (@{$gtfs_data->{$name}}) {
+    say $fh join ',', @{$fields->{$name}};
+    foreach my $row (@{$data->{$name}}) {
         no warnings 'uninitialized';
-        say $fh join ',', @$row{ @{$gtfs_fields->{$name}} };
+        say $fh join ',', @$row{ @{$fields->{$name}} };
     };
 };
 
