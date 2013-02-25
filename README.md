@@ -66,6 +66,6 @@ Pierwsza działająca wersja ma być uproszczona w stosunku do pełnej i sukcesy
 TODO
 ----
 
-  [ ] Uspójnienie ID pozycji z bazy GTFS z danymi ze strony MPK
-  [ ] Wykrywanie kursu-widma
+- [ ] Uspójnienie ID pozycji z bazy GTFS z danymi ze strony MPK
+- [ ] Wykrywanie kursu-widma
   
