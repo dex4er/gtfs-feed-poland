@@ -51,7 +51,7 @@ Dla przykładu: nie ma spisu kierunków (kursów) na tej samej trasie. Tę infor
 
 ### Kursy widmo
 
-Nie wszystkie kursy rozpoczynają się na pierwszym lub kończą na ostatnim przystanku. Przykład: dla linii 1 niektóre przystanki mają po 89 kursów a niektóre po 90.
+Nie wszystkie kursy rozpoczynają się na pierwszym lub kończą na ostatnim przystanku. Przykład: dla linii 1 niektóre przystanki mają po 89 kursów a niektóre po 90. Wymaga to zmiany algorytmu tak, aby pomijać dodatkowe kursy (wykrywanie sytuacji, że na przystanku B pojazd jest wcześniej niż na przystanku A).
 
 Uproszczenia
 ------------
@@ -67,3 +67,5 @@ TODO
 ----
 
   [ ] Uspójnienie ID pozycji z bazy GTFS z danymi ze strony MPK
+  [ ] Wykrywanie kursu-widma
+  
